@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::*;
-use crate::fields::{FieldChip, PairingChip};
+use crate::{fields::FieldChip, ecc::pairing::PairingChip};
 use crate::{fields::FpStrategy, halo2_proofs::halo2curves::bn256::G2Affine};
 use halo2_base::{
     gates::{

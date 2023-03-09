@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 use super::{Fp12Chip, Fp2Chip, FpChip, FpPoint, FqPoint};
-use crate::fields::PairingChip;
+use crate::ecc::pairing::PairingChip;
 use crate::halo2_proofs::halo2curves::bn256::{
     G1Affine, G2Affine, FROBENIUS_COEFF_FQ12_C1, SIX_U_PLUS_2_NAF,
 };
@@ -386,12 +386,17 @@ impl<'chip, F: PrimeField> BN254PairingChip<'chip, F> {
         let pair = vec![(P, Q)];
         self.multi_miller_loop(ctx, pair)
     }
+}
 
-    pub fn multi_miller_loop(
+impl<'chip, F: PrimeField> PairingChip<F> for BN254PairingChip<'chip, F> {
+    fn multi_miller_loop(
         &self,
         ctx: &mut Context<F>,
-        pairs: Vec<(&EcPoint<F, FpPoint<F>>, &EcPoint<F, FqPoint<F>>)>,
-    ) -> FqPoint<F> {
+        pairs: Vec<(
+            &EcPoint<F, crate::ecc::pairing::FpPoint<F>>,
+            &EcPoint<F, crate::ecc::pairing::FqPoint<F>>,
+        )>,
+    ) -> FieldExtPoint<crate::bigint::CRTInteger<F>> {
         let fp2_chip = Fp2Chip::<F>::new(self.fp_chip);
         let g2_chip = EccChip::new(&fp2_chip);
         multi_miller_loop_BN::<F>(
@@ -402,21 +407,12 @@ impl<'chip, F: PrimeField> BN254PairingChip<'chip, F> {
         )
     }
 
-    pub fn final_exp(&self, ctx: &mut Context<F>, f: &FqPoint<F>) -> FqPoint<F> {
-        let fp12_chip = Fp12Chip::<F>::new(self.fp_chip);
-        fp12_chip.final_exp(ctx, f)
-    }
-}
-
-impl<'chip, F: PrimeField> PairingChip<F> for BN254PairingChip<'chip, F> {
-    // optimal Ate pairing
-    fn pairing(
+    fn final_exp(
         &self,
         ctx: &mut Context<F>,
-        Q: &EcPoint<F, FqPoint<F>>,
-        P: &EcPoint<F, FpPoint<F>>,
-    ) -> FqPoint<F> {
-        let f0 = self.miller_loop(ctx, Q, P);
-        self.final_exp(ctx, &f0)
+        f: &crate::ecc::pairing::FqPoint<F>,
+    ) -> crate::ecc::pairing::FqPoint<F> {
+        let fp12_chip = Fp12Chip::<F>::new(self.fp_chip);
+        fp12_chip.final_exp(ctx, f)
     }
 }

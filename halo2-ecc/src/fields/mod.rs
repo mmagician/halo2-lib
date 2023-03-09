@@ -1,4 +1,4 @@
-use crate::{bigint::CRTInteger, ecc::EcPoint, halo2_proofs::arithmetic::Field};
+use crate::halo2_proofs::arithmetic::Field;
 use halo2_base::{
     gates::RangeInstructions,
     utils::{BigPrimeField, ScalarField},
@@ -248,13 +248,4 @@ pub trait FieldExtConstructor<Fp: ff::PrimeField, const DEGREE: usize> {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum FpStrategy {
     Simple,
-}
-
-pub trait PairingChip<F: PrimeField> {
-    fn pairing(
-        &self,
-        ctx: &mut Context<F>,
-        Q: &EcPoint<F, FieldExtPoint<CRTInteger<F>>>,
-        P: &EcPoint<F, CRTInteger<F>>,
-    ) -> FieldExtPoint<CRTInteger<F>>;
 }
