@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use super::pairing::PairingChip;
+use super::pairing::BN254PairingChip;
 use super::*;
 use crate::halo2_proofs::{
     dev::MockProver,

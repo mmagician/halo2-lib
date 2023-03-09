@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 use super::{Fp12Chip, Fp2Chip, FpChip, FpPoint, FqPoint};
+use crate::fields::PairingChip;
 use crate::halo2_proofs::halo2curves::bn256::{
     G1Affine, G2Affine, FROBENIUS_COEFF_FQ12_C1, SIX_U_PLUS_2_NAF,
 };
@@ -436,11 +437,11 @@ pub fn neg_twisted_frobenius<F: PrimeField>(
 }
 
 // To avoid issues with mutably borrowing twice (not allowed in Rust), we only store fp_chip and construct g2_chip and fp12_chip in scope when needed for temporary mutable borrows
-pub struct PairingChip<'chip, F: PrimeField> {
+pub struct BN254PairingChip<'chip, F: PrimeField> {
     pub fp_chip: &'chip FpChip<'chip, F>,
 }
 
-impl<'chip, F: PrimeField> PairingChip<'chip, F> {
+impl<'chip, F: PrimeField> BN254PairingChip<'chip, F> {
     pub fn new(fp_chip: &'chip FpChip<F>) -> Self {
         Self { fp_chip }
     }
@@ -496,17 +497,17 @@ impl<'chip, F: PrimeField> PairingChip<'chip, F> {
         let fp12_chip = Fp12Chip::<F>::new(self.fp_chip);
         fp12_chip.final_exp(ctx, f)
     }
+}
 
+impl<'chip, F: PrimeField> PairingChip<F> for BN254PairingChip<'chip, F> {
     // optimal Ate pairing
-    pub fn pairing(
+    fn pairing(
         &self,
         ctx: &mut Context<F>,
         Q: &EcPoint<F, FqPoint<F>>,
         P: &EcPoint<F, FpPoint<F>>,
     ) -> FqPoint<F> {
         let f0 = self.miller_loop(ctx, Q, P);
-        let fp12_chip = Fp12Chip::<F>::new(self.fp_chip);
-        // final_exp implemented in final_exp module
-        fp12_chip.final_exp(ctx, &f0)
+        self.final_exp(ctx, &f0)
     }
 }

@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::*;
-use crate::fields::FieldChip;
+use crate::fields::{FieldChip, PairingChip};
 use crate::{fields::FpStrategy, halo2_proofs::halo2curves::bn256::G2Affine};
 use halo2_base::{
     gates::{
@@ -41,7 +41,7 @@ fn pairing_test<F: PrimeField>(
     std::env::set_var("LOOKUP_BITS", params.lookup_bits.to_string());
     let range = RangeChip::<F>::default(params.lookup_bits);
     let fp_chip = FpChip::<F>::new(&range, params.limb_bits, params.num_limbs);
-    let chip = PairingChip::new(&fp_chip);
+    let chip = BN254PairingChip::new(&fp_chip);
 
     let P_assigned = chip.load_private_g1(ctx, P);
     let Q_assigned = chip.load_private_g2(ctx, Q);
