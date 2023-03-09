@@ -194,11 +194,13 @@ pub fn fp12_multiply_with_line_equal<F: PrimeField>(
 // Assuming curve is of form `y^2 = x^3 + b` for now (a = 0) for less operations
 // Value of `b` is never used
 // Inputs:
-// - Q = (x, y) is a point in E(Fp2)
-// - P is a point in E(Fp)
+// - pairs: vec of (P, Q) pairs, where
+//     - P is a point in E(Fp)
+//     - Q = (x, y) is a point in E(Fp2)
 // - `pseudo_binary_encoding` is fixed vector consisting of {-1, 0, 1} entries such that `loop_count = sum pseudo_binary_encoding[i] * 2^i`
 // Output:
-//  - f_{loop_count}(Q,P) * l_{[loop_count] Q', Frob_p(Q')}(P) * l_{[loop_count] Q' + Frob_p(Q'), -Frob_p^2(Q')}(P)
+//  - Prod_i e'(P_i, Q_i), where e'(P_i, Q_i) is:
+//      e'(P, Q) = f_{loop_count}(P, Q) * l_{[loop_count] Q', Frob_p(Q')}(P) * l_{[loop_count] Q' + Frob_p(Q'), -Frob_p^2(Q')}(P)
 //  - where we start with `f_1(Q,P) = 1` and use Miller's algorithm f_{i+j} = f_i * f_j * l_{i,j}(Q,P)
 //  - Q' = Psi(Q) in E(Fp12)
 //  - Frob_p(x,y) = (x^p, y^p)
@@ -208,92 +210,6 @@ pub fn fp12_multiply_with_line_equal<F: PrimeField>(
 //  - r is prime, so [i]Q != [j]Q for i != j in Z/r
 //  - `0 <= loop_count < r` and `loop_count < p` (to avoid [loop_count]Q' = Frob_p(Q'))
 //  - x^3 + b = 0 has no solution in Fp2, i.e., the y-coordinate of Q cannot be 0.
-
-pub fn miller_loop_BN<F: PrimeField>(
-    ecc_chip: &EccChip<F, Fp2Chip<F>>,
-    ctx: &mut Context<F>,
-    Q: &EcPoint<F, FqPoint<F>>,
-    P: &EcPoint<F, FpPoint<F>>,
-    pseudo_binary_encoding: &[i8],
-) -> FqPoint<F> {
-    let mut i = pseudo_binary_encoding.len() - 1;
-    while pseudo_binary_encoding[i] == 0 {
-        i -= 1;
-    }
-    let last_index = i;
-
-    let neg_Q = ecc_chip.negate(ctx, Q);
-    assert!(pseudo_binary_encoding[i] == 1 || pseudo_binary_encoding[i] == -1);
-    let mut R = if pseudo_binary_encoding[i] == 1 { Q.clone() } else { neg_Q.clone() };
-    i -= 1;
-
-    // initialize the first line function into Fq12 point
-    let sparse_f = sparse_line_function_equal::<F>(ecc_chip.field_chip(), ctx, &R, P);
-    assert_eq!(sparse_f.len(), 6);
-
-    let zero_fp = ecc_chip.field_chip.fp_chip.load_constant(ctx, BigUint::from(0u64));
-    let mut f_coeffs = Vec::with_capacity(12);
-    for coeff in &sparse_f {
-        if let Some(fp2_point) = coeff {
-            f_coeffs.push(fp2_point.coeffs[0].clone());
-        } else {
-            f_coeffs.push(zero_fp.clone());
-        }
-    }
-    for coeff in &sparse_f {
-        if let Some(fp2_point) = coeff {
-            f_coeffs.push(fp2_point.coeffs[1].clone());
-        } else {
-            f_coeffs.push(zero_fp.clone());
-        }
-    }
-
-    let mut f = FqPoint::construct(f_coeffs);
-
-    loop {
-        if i != last_index - 1 {
-            let fp12_chip = Fp12Chip::<F>::new(ecc_chip.field_chip.fp_chip);
-            let f_sq = fp12_chip.mul(ctx, &f, &f);
-            f = fp12_multiply_with_line_equal::<F>(ecc_chip.field_chip(), ctx, &f_sq, &R, P);
-        }
-        R = ecc_chip.double(ctx, &R);
-
-        assert!(pseudo_binary_encoding[i] <= 1 && pseudo_binary_encoding[i] >= -1);
-        if pseudo_binary_encoding[i] != 0 {
-            let sign_Q = if pseudo_binary_encoding[i] == 1 { Q } else { &neg_Q };
-            f = fp12_multiply_with_line_unequal::<F>(
-                ecc_chip.field_chip(),
-                ctx,
-                &f,
-                (&R, sign_Q),
-                P,
-            );
-            R = ecc_chip.add_unequal(ctx, &R, sign_Q, false);
-        }
-        if i == 0 {
-            break;
-        }
-        i -= 1;
-    }
-
-    // Frobenius coefficient coeff[1][j] = ((9+u)^{(p-1)/6})^j
-    // load coeff[1][2], coeff[1][3]
-    let c2 = FROBENIUS_COEFF_FQ12_C1[1] * FROBENIUS_COEFF_FQ12_C1[1];
-    let c3 = c2 * FROBENIUS_COEFF_FQ12_C1[1];
-    let c2 = ecc_chip.field_chip.load_constant(ctx, c2);
-    let c3 = ecc_chip.field_chip.load_constant(ctx, c3);
-
-    let Q_1 = twisted_frobenius::<F>(ecc_chip, ctx, Q, &c2, &c3);
-    let neg_Q_2 = neg_twisted_frobenius::<F>(ecc_chip, ctx, &Q_1, &c2, &c3);
-    f = fp12_multiply_with_line_unequal::<F>(ecc_chip.field_chip(), ctx, &f, (&R, &Q_1), P);
-    R = ecc_chip.add_unequal(ctx, &R, &Q_1, false);
-    f = fp12_multiply_with_line_unequal::<F>(ecc_chip.field_chip(), ctx, &f, (&R, &neg_Q_2), P);
-
-    f
-}
-
-// let pairs = [(a_i, b_i)], a_i in G_1, b_i in G_2
-// output is Prod_i e'(a_i, b_i), where e'(a_i, b_i) is the output of `miller_loop_BN(b_i, a_i)`
 pub fn multi_miller_loop_BN<F: PrimeField>(
     ecc_chip: &EccChip<F, Fp2Chip<F>>,
     ctx: &mut Context<F>,
@@ -467,15 +383,8 @@ impl<'chip, F: PrimeField> BN254PairingChip<'chip, F> {
         Q: &EcPoint<F, FqPoint<F>>,
         P: &EcPoint<F, FpPoint<F>>,
     ) -> FqPoint<F> {
-        let fp2_chip = Fp2Chip::<F>::new(self.fp_chip);
-        let g2_chip = EccChip::new(&fp2_chip);
-        miller_loop_BN::<F>(
-            &g2_chip,
-            ctx,
-            Q,
-            P,
-            &SIX_U_PLUS_2_NAF, // pseudo binary encoding for BN254
-        )
+        let pair = vec![(P, Q)];
+        self.multi_miller_loop(ctx, pair)
     }
 
     pub fn multi_miller_loop(
